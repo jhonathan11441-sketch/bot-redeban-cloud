@@ -24,7 +24,6 @@ CONTRASEÑA = os.getenv('CONTRASEÑA_REDEBAN')
 CUC_COMERCIO = os.getenv('CUC_COMERCIO')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')
-
 ZONA = pytz.timezone('America/Bogota')
 
 def enviar_telegram(msg):
@@ -72,12 +71,12 @@ async def procesar_redeban():
             comercios = await page.query_selector_all(f'text={CUC_COMERCIO}')
             if comercios:
                 await comercios[0].click(force=True)
-            await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(2000)
             
             aceptars = await page.query_selector_all('button:has-text("ACEPTAR")')
             if aceptars:
                 await aceptars[0].click(force=True)
-            await page.wait_for_timeout(6000)
+                await page.wait_for_timeout(6000)
             
             # CONSULTA TRANSACCIONES
             await page.click('text=Consulta Transacciones')
@@ -87,8 +86,8 @@ async def procesar_redeban():
             buscars = await page.query_selector_all('button:has-text("Buscar")')
             if buscars:
                 await buscars[0].click(force=True)
-            logger.info("[*] Esperando resultados...")
-            await page.wait_for_timeout(8000)
+                logger.info("[*] Esperando resultados...")
+                await page.wait_for_timeout(8000)
             
             # CAMBIAR A 100 ITEMS
             logger.info("[*] Configurando 100 items por página...")
@@ -103,7 +102,7 @@ async def procesar_redeban():
                         option_100 = await page.query_selector('mat-option[value="100"]')
                         if option_100:
                             await option_100.click()
-                            logger.info("[✓] Cambiado a 100 items")
+                            logger.info("[\u2713] Cambiado a 100 items")
                         else:
                             options = await page.query_selector_all('mat-option')
                             for opt in options:
@@ -173,8 +172,8 @@ async def procesar_redeban():
                         pass
                 
                 logger.info("="*70)
-                logger.info(f"✓ TRANSACCIONES ACEPTADAS: {len(transacciones)}")
-                logger.info(f"✗ TRANSACCIONES RECHAZADAS: {len(transacciones_rechazadas)}")
+                logger.info(f"\u2713 TRANSACCIONES ACEPTADAS: {len(transacciones)}")
+                logger.info(f"\u2717 TRANSACCIONES RECHAZADAS: {len(transacciones_rechazadas)}")
                 
                 if transacciones:
                     # Separar por período
@@ -186,39 +185,19 @@ async def procesar_redeban():
                     total_general = total_mañana + total_tarde
                     total_rechazado = sum(t['valor'] for t in transacciones_rechazadas)
                     
-                    logger.info(f"\n🌅 MAÑANA (00:00-12:30): {len(mañana)} transacciones - ${total_mañana:,.2f}")
-                    logger.info(f"🌆 TARDE (12:30-21:00): {len(tarde)} transacciones - ${total_tarde:,.2f}")
+                    logger.info(f"\n\ud83c\udf05 MAÑANA (00:00-12:30): {len(mañana)} transacciones - ${total_mañana:,.2f}")
+                    logger.info(f"\ud83c\udf06 TARDE (12:30-21:00): {len(tarde)} transacciones - ${total_tarde:,.2f}")
                     logger.info(f"TOTAL: {len(transacciones)} transacciones - ${total_general:,.2f}")
                     
                     # Construir mensaje
                     rechazadas_info = ""
                     if transacciones_rechazadas:
-                        rechazadas_info = f"""\n\n⚠️ <b>TRANSACCIONES RECHAZADAS ({len(transacciones_rechazadas)})</b>
-💰 Monto: ${total_rechazado:,.2f}
-<i>(Excluidas del total)</i>"""
-                    
-                    msg = f"""📊 <b>INFORME QR COMPLETO - {datetime.now(ZONA).strftime('%d/%m/%Y')}</b>
-🏪 PANADERIA EL PORTON
-📍 CUC: {CUC_COMERCIO}
-
-<b>🌅 MAÑANA (00:00-12:30)</b>
-📝 Transacciones: {len(mañana)}
-💰 Total: <b>${total_mañana:,.2f}</b>
-
-<b>🌆 TARDE (12:30-21:00)</b>
-📝 Transacciones: {len(tarde)}
-💰 Total: <b>${total_tarde:,.2f}</b>
-{rechazadas_info}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-<b>📊 RESUMEN DEL DÍA</b>
-📝 Total Transacciones (Válidas): {len(transacciones)}
-💰 Monto Total: <b>${total_general:,.2f}</b>
-"""
+                        rechazadas_info = f"""\n\n\u26a0\ufe0f <b>TRANSACCIONES RECHAZADAS ({len(transacciones_rechazadas)})</b><br>\ud83d\udcb0 Monto: ${total_rechazado:,.2f}<i>(Excluidas del total)</i>""" 
+                    msg = f"""\ud83d\udcca <b>INFORME QR COMPLETO - {datetime.now(ZONA).strftime('%d/%m/%Y')}</b><br>\ud83c\udfd0 PANADERIA EL PORTON<br>\ud83d\udcd0 CUC: {CUC_COMERCIO}<b>\ud83c\udf05 MAÑANA (00:00-12:30)</b><br>\ud83d\udccb Transacciones: {len(mañana)}<br>\ud83d\udcb0 Total: <b>${total_mañana:,.2f}</b><b>\ud83c\udf06 TARDE (12:30-21:00)</b><br>\ud83d\udccb Transacciones: {len(tarde)}<br>\ud83d\udcb0 Total: <b>${total_tarde:,.2f}</b><br>{rechazadas_info}<br>━━━━━━━━━━━━━━━━━━━━━━━━━━━<b>\ud83d\udcca RESUMEN DEL DÍA</b><br>\ud83d\udccb Total Transacciones (Válidas): {len(transacciones)}<br>\ud83d\udcb0 Monto Total: <b>${total_general:,.2f}</b><br>"""
                     
                     logger.info("[*] Enviando a Telegram...")
                     if enviar_telegram(msg):
-                        logger.info("[✓] Informe enviado correctamente")
+                        logger.info("[\u2713] Informe enviado correctamente")
                         return {"success": True, "message": "Informe enviado", "transacciones": len(transacciones)}
                     else:
                         return {"success": False, "message": "Error al enviar Telegram"}
@@ -227,7 +206,7 @@ async def procesar_redeban():
                     return {"success": False, "message": "No se encontraron transacciones"}
             
         except Exception as e:
-            logger.error(f"[✗] Error: {e}")
+            logger.error(f"[\u2717] Error: {e}")
             import traceback
             traceback.print_exc()
             return {"success": False, "error": str(e)}
