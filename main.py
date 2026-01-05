@@ -1,12 +1,11 @@
 from flask import Flask, jsonify
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
 import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime
 import pytz
 import re
-import asyncio
 import logging
 
 # Configurar logging
@@ -30,86 +29,101 @@ ZONA = pytz.timezone('America/Bogota')
 def enviar_telegram(msg):
     """Envía mensaje a Telegram"""
     try:
-        logger.info(f"Intentando enviar mensaje a Telegram...")
+        logger.info(f"Enviando mensaje a Telegram...")
         response = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
             json={"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"},
             timeout=10
         )
-        logger.info(f"Telegram response: {response.status_code}")
+        logger.info(f"Telegram status: {response.status_code}")
         return response.status_code == 200
     except Exception as e:
         logger.error(f"Error enviando Telegram: {e}")
         return False
 
-async def procesar_redeban():
+def procesar_redeban():
     """Procesa Redeban y retorna el informe"""
     
-    logger.info("[*] Iniciando proceso Redeban...")
+    logger.info("="*70)
+    logger.info("AUTOMATIZACIÓN REDEBAN")
+    logger.info("="*70)
     
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
-        )
-        page = await browser.new_page()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+        page = browser.new_page()
         
         try:
             logger.info("[*] Abriendo Redeban...")
-            # URL CORRECTA DE REDEBAN
-            await page.goto('https://www.entrecuentasredeban.com.co/webcopi/#/login', timeout=60000)
-            await page.wait_for_timeout(5000)
+            page.goto('https://www.entrecuentasredeban.com.co/webcopi/#/login', timeout=60000)
+            page.wait_for_timeout(5000)
             
             # LOGIN
             logger.info("[*] Rellenando credenciales...")
-            inputs = await page.query_selector_all('input')
-            if len(inputs) >= 2:
-                await inputs[0].fill(USUARIO)
-                await inputs[1].fill(CONTRASEÑA)
-                logger.info("[*] Haciendo clic en botón Ingresar...")
-                await page.click('button:has-text("Ingresar")')
-                await page.wait_for_timeout(10000)
+            inputs = page.query_selector_all('input')
+            inputs[0].fill(USUARIO)
+            inputs[1].fill(CONTRASEÑA)
+            logger.info("[*] Haciendo clic en Ingresar...")
+            page.click('button:has-text("Ingresar")')
+            page.wait_for_timeout(10000)
             
             # COMERCIO
             logger.info("[*] Seleccionando comercio...")
-            try:
-                await page.click('#mat-input-2')
-                await page.wait_for_timeout(3000)
-                comercios = await page.query_selector_all(f'text={CUC_COMERCIO}')
-                if comercios:
-                    await comercios[0].click(force=True)
-                    await page.wait_for_timeout(2000)
-                
-                aceptars = await page.query_selector_all('button:has-text("ACEPTAR")')
-                if aceptars:
-                    await aceptars[0].click(force=True)
-                    await page.wait_for_timeout(6000)
-            except Exception as e:
-                logger.warning(f"Error seleccionando comercio: {e}")
+            page.click('#mat-input-2')
+            page.wait_for_timeout(3000)
+            comercios = page.query_selector_all(f'text={CUC_COMERCIO}')
+            if comercios:
+                comercios[0].click(force=True)
+            page.wait_for_timeout(2000)
+            
+            aceptars = page.query_selector_all('button:has-text("ACEPTAR")')
+            if aceptars:
+                aceptars[0].click(force=True)
+            page.wait_for_timeout(6000)
             
             # CONSULTA TRANSACCIONES
             logger.info("[*] Accediendo a Consulta Transacciones...")
-            try:
-                await page.click('text=Consulta Transacciones')
-                await page.wait_for_timeout(5000)
-            except:
-                logger.warning("No se pudo hacer clic en Consulta Transacciones")
+            page.click('text=Consulta Transacciones')
+            page.wait_for_timeout(5000)
             
             # BUSCAR
             logger.info("[*] Buscando transacciones...")
+            buscars = page.query_selector_all('button:has-text("Buscar")')
+            if buscars:
+                buscars[0].click(force=True)
+            page.wait_for_timeout(8000)
+            
+            # CAMBIAR A 100 ITEMS
+            logger.info("[*] Configurando 100 items por página...")
             try:
-                buscars = await page.query_selector_all('button:has-text("Buscar")')
-                if buscars:
-                    await buscars[0].click(force=True)
-                    await page.wait_for_timeout(8000)
-            except:
-                logger.warning("No se pudo hacer clic en Buscar")
+                dropdown_container = page.query_selector('mat-paginator')
+                if dropdown_container:
+                    select_elem = dropdown_container.query_selector('mat-select')
+                    if select_elem:
+                        select_elem.click()
+                        page.wait_for_timeout(2000)
+                        
+                        option_100 = page.query_selector('mat-option[value="100"]')
+                        if option_100:
+                            option_100.click()
+                            logger.info("[OK] Cambiado a 100 items")
+                        else:
+                            options = page.query_selector_all('mat-option')
+                            for opt in options:
+                                if "100" in opt.text_content():
+                                    opt.click()
+                                    break
+                        
+                        page.wait_for_timeout(5000)
+            except Exception as e:
+                logger.warning(f"No se pudo cambiar items: {e}")
             
             # EXTRAER DATOS
             logger.info("[*] Extrayendo datos...")
-            contenedor = await page.query_selector('div[role="main"]') or await page.query_selector('body')
+            page.wait_for_timeout(3000)
+            
+            contenedor = page.query_selector('div[role="main"]') or page.query_selector('body')
             if contenedor:
-                texto = await contenedor.inner_text()
+                texto = contenedor.inner_text()
                 
                 transacciones = []
                 transacciones_rechazadas = []
@@ -177,63 +191,38 @@ async def procesar_redeban():
                     logger.info(f"TARDE (12:30-21:00): {len(tarde)} transacciones - ${total_tarde:,.2f}")
                     logger.info(f"TOTAL: {len(transacciones)} transacciones - ${total_general:,.2f}")
                     
-                    # Construir mensaje para Telegram
+                    # Construir mensaje
                     rechazadas_info = ""
                     if transacciones_rechazadas:
-                        rechazadas_info = f"""\n\n TRANSACCIONES RECHAZADAS ({len(transacciones_rechazadas)})<br>☀ Monto: ${total_rechazado:,.2f}<i>(Excluidas del total)</i>""" 
+                        rechazadas_info = f"""\n\n⚠️ <b>TRANSACCIONES RECHAZADAS ({len(transacciones_rechazadas)})</b><br>💰 Monto: ${total_rechazado:,.2f}<br><i>(Excluidas del total)</i>""" 
                     
-                    msg = f"""INFORME QR COMPLETO - {datetime.now(ZONA).strftime('%d/%m/%Y')}<br>
-🏐 PANADERIA EL PORTON<br>
-📐 CUC: {CUC_COMERCIO}<br>
-<br>
-<b>MAÑANA (00:00-12:30)</b><br>
- Transacciones: {len(mañana)}<br>
- Total: <b>${total_mañana:,.2f}</b><br>
-<br>
-<b>TARDE (12:30-21:00)</b><br>
- Transacciones: {len(tarde)}<br>
- Total: <b>${total_tarde:,.2f}</b><br>
-{rechazadas_info}<br>
-<br>
-<b>RESUMEN DEL DÍA</b><br>
- Total Transacciones (Válidas): {len(transacciones)}<br>
- Monto Total: <b>${total_general:,.2f}</b>
-    """
+                    msg = f"""\ud83d\udcca <b>INFORME QR COMPLETO - {datetime.now(ZONA).strftime('%d/%m/%Y')}</b><br>\ud83c\udfd0 PANADERIA EL PORTON<br>\ud83d\udcd0 CUC: {CUC_COMERCIO}<br><br><b>\ud83c\udf05 MAÑANA (00:00-12:30)</b><br>\ud83d\udccb Transacciones: {len(mañana)}<br>\ud83d\udcb0 Total: <b>${total_mañana:,.2f}</b><br><br><b>\ud83c\udf06 TARDE (12:30-21:00)</b><br>\ud83d\udccb Transacciones: {len(tarde)}<br>\ud83d\udcb0 Total: <b>${total_tarde:,.2f}</b><br>{rechazadas_info}<br><br>━━━━━━━━━━━━━━━━━━━━━━━━━━━<b>\ud83d\udcca RESUMEN DEL DÍA</b><br>\ud83d\udccb Total Transacciones (Válidas): {len(transacciones)}<br>\ud83d\udcb0 Monto Total: <b>${total_general:,.2f}</b>
+                    """
                     
                     logger.info("[*] Enviando a Telegram...")
                     if enviar_telegram(msg):
-                        logger.info("[OK] Informe enviado correctamente a Telegram")
+                        logger.info("[OK] Informe enviado correctamente")
                         return {"success": True, "message": "Informe enviado", "transacciones": len(transacciones)}
                     else:
                         return {"success": False, "message": "Error al enviar Telegram"}
                 else:
-                    logger.warning("[!] No se encontraron transacciones")
-                    # Enviar mensaje informando que no hay transacciones
-                    msg = f"""Sin transacciones - {datetime.now(ZONA).strftime('%d/%m/%Y %H:%M')}<br>
-No se encontraron transacciones en Redeban para hoy.
-                    """
-                    enviar_telegram(msg)
+                    logger.warning("No se encontraron transacciones")
                     return {"success": False, "message": "No se encontraron transacciones"}
-            else:
-                return {"success": False, "message": "No se pudo extraer datos"}
             
         except Exception as e:
             logger.error(f"[ERROR] {e}")
             import traceback
             traceback.print_exc()
-            # Enviar error a Telegram
-            error_msg = f"Error en bot Redeban: {str(e)[:100]}"
-            enviar_telegram(error_msg)
             return {"success": False, "error": str(e)}
         finally:
-            await browser.close()
+            browser.close()
 
 @app.route('/', methods=['GET', 'POST'])
 def ejecutar_bot():
     """Endpoint para ejecutar el bot"""
     logger.info("[*] Ejecutando bot...")
     try:
-        resultado = asyncio.run(procesar_redeban())
+        resultado = procesar_redeban()
         return jsonify(resultado), 200
     except Exception as e:
         logger.error(f"Error en endpoint: {e}")
